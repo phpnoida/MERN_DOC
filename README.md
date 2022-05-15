@@ -1,19 +1,19 @@
 # System requirement :
 
-node installed (node -v)
-mongodb running 
-pm2 install 
-redis install and running 
+- node installed (node -v)
+- mongodb running 
+- pm2 install 
+- redis install and running 
 
 ------------------------------------------------------------------------------
 # Export & Import 
 
-module.exports =Email ;//for one file
-module.exports ={httpLogin,httpLogout} //for multiple methods
+- module.exports =Email ;//for one file
+- module.exports ={httpLogin,httpLogout} //for multiple methods
 
-const slug=require('slugify');//importing third party package
-const controller =require('./../controllers/user');
-const {httpLogin,httpLogout}=require('./../controllers/user');
+- const slug=require('slugify');//importing third party package
+- const controller =require('./../controllers/user');
+- const {httpLogin,httpLogout}=require('./../controllers/user');
 
 ------------------------------------------------------------------------------
 # Folder setup
