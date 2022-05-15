@@ -35,16 +35,19 @@ Dsobs/api
 - .gitignore
 
 //create package.json file for your project
+
 -npm install -y -->first time create package.json
 -npm install ----will install all packages from package.json file 
 
 //install npm packages
+
 -npm i express@4
 -npm i mongoose //we will install mongoose latest version i.e 6th
 -npm i mongoose@5
 -npm i dotenv
 
 //uninstall packages which r not required
+
 -npm uninstall jsownebtoken
 
 //write script in package.json file to run project
