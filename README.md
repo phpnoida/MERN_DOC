@@ -68,7 +68,7 @@ package.json
 
 # Models
 
-create a file in models folder user.js
+- create a file in models folder user.js
 
 ```
 const mongoose=require('mongoose');
@@ -177,8 +177,8 @@ const handleDuplicateFieldsDB = err => {
 const handleValidationErrorDB = err => {
   //we will convert object into array ,bcz map returns an array
   const errors = Object.values(err.errors).map(el => el.message);
- 
-  //we are join() bcz we are sending response in string ,if 
+
+  //we are join() bcz we are sending response in string ,if
   //u want to send array only then we can send errors as it is
   const message = `Invalid input data. ${errors.join('. ')}`;
   return new AppError(message, 400);
@@ -263,3 +263,287 @@ class AppError extends  Error{
 
 module.exports=AppError;
 ```
+
+---
+
+# catchAsync Error of controller
+
+- in controller using try and catch everywhere can dilute the readability
+- go to common folder and create a file catchAsync.js
+
+```
+const catchAsync =(fn)=>{
+    return async (req,res,next)=>{
+        try{
+          await fn(req,res,next)
+        }catch(error){
+            next(error)
+
+        }
+    }
+}
+module.exports=catchAsync;
+```
+
+---
+
+# controllers
+
+- go to controllers folder ,create a folder named user
+- inside user folder create following files :
+  - create.js
+  - delete.js
+  - update.js
+  - get.js
+
+create.js
+
+```
+const User = require('./../models/User');
+const {StatusCodes}=require('http-status-code');
+const AppError = require('./../common/AppError');
+const catchAsync = require('./../common/catchAsync');
+
+const httpCreate = catchAsync(async(req,res,next)=>{
+    console.log('');
+    //about req object
+    //const {}=req.body;
+    //const {}=req.params;
+    //const {}=req.headers;
+    //const {}=req.query;
+    if(condition){
+        return new AppError('',StatusCodes.)
+    }
+
+    res.status(StatusCodes.CREATED).json({
+        status:true,
+        data:data
+    })
+})
+
+module.exports=httpCreate;
+```
+
+---
+
+# routes
+
+- go to routes folder and create a file with namee user.js
+
+user.js
+
+```
+const express = require('express');
+const httpCreate = require('./../controllers/create');
+const httpGetAll = require('./../controllers/getAll');
+//const controller = require('./../controllers/user');
+
+const route=express.Router();
+router.route('/user').post(httpCreate);
+router.route('/users').get(httpGetAll);
+router.route('/user/:userId').get().patch().delete();
+
+module.exports=router;
+```
+
+---
+
+# app.js
+
+- this file will host all middlewares
+- sequence of middlewares matters a lot
+
+```
+const express = require('express');
+const cors = require('cors');
+const helmet=require('helmet');
+const mongoSanitize=require('express-mongo-sanitize');
+const xss =require('xss-clean');
+const userRoute=require('./routes/user');
+const AppError =require('./common/AppError');
+const globalErrorHandler=require('./common/globalErrorHandler');
+
+const app =express();
+app.use(cors());
+app.options('*',cors());
+app.use(express.json());
+app.use(helmet());
+app.use(mongoSanitize());
+app.use(xss());
+app.use('/api',userRoute);
+app.use('/api',tourRoute);
+
+app.all("*",(req,res,next)=>{
+    next(new AppError('invalid Url',404))
+})
+
+app.use(globalErrorHandler);
+
+module.exports=app;
+```
+
+---
+
+# database.js
+
+```
+const mongoose=require('mongoose');
+const connectDB =()=>{
+    if(process.env.NODE_ENV==='development'){
+        mongoose.connect(process.env.DEV_DB_URL).then(()=>{
+            console.log('Dev DB Connected')
+        }).catch((err)=>{
+            console.log('Dev DB Error',err)
+        })
+    }
+    else if(process.env.NODE_ENV==='production'){
+        mongoose.connect(process.env.PROD_DB_URL).then(()=>{
+            console.log('Prod DB Connected')
+        }).catch((err)=>{
+            console.log('Prod DB Error',err)
+        })
+
+    }
+}
+
+module.exports=connectDB;
+```
+
+---
+
+# server.js
+
+```
+const env=require('dotenv');
+env.config();
+//env.config({path:''})
+const http=require('http');
+const app =require('./app');
+const connectDB=require('./database');
+const server=http.createServer(app);
+const PORT=process.env.PORT;
+
+async function startServer(){
+    await connectDB();
+    server.listen(PORT,()=>{
+        console.log('server is listening..')
+    })
+}
+startServer(); //no need to use await
+```
+
+---
+# validations in express
+- validation in express can be done in 3 ways
+- either in controller,either in model , either using 3rd party package
+- let us see using 3rd party
+- goto validations folder create a file named user.js
+
+```
+const {check,body,validationResult}=require('express-validator');
+
+const validateLogin =()=>{
+    return [
+        check('email').isEmail().withMessage(''),
+        check('phone').matches().withMessage(''),
+        body('name').notEmpty().withMessage(''),
+        body('city').isOptional({checkFalsy:true}).matches().withMessage(''),
+        check('confirmPassword').custom((val,{req})=>{
+            if(!val===req.body.password){
+                throw new Error('not matched')
+            }
+            return true;
+        })
+    ]
+}
+
+const isValidated = (req,res,next)=>{
+    const errors = validationResult(req);
+    if(errors.isEmpty()){
+        return next();
+    }
+    res.status(422).json({
+        status:false,
+        errors:errors.array()
+    })
+}
+
+module.exports={validateLogin,isValidated}
+```
+- go to routes 
+- const {validateLogin,isValidated}=require('./../validations/user');
+- router.route('/login').post(validateLogin,isValidated,httpLogin);
+
+---
+# logging 
+- can be done using two ways 
+- first using morgan 
+- second using winston so that we can save logs in db
+- we have to clear db after every 15 days otherwise server will be out of space
+
+- let us start with morgan , go to app.js file
+```
+const morgan =require('morgan');
+//will log all incoming request to console
+app.use(morgan('combined'));
+//write error logs only in access.log file 
+const accessLogStream =fs.createWriteStream(path.join(__dirname,'access.log'),{flags:'a'});
+app.use(morgan('combined',{
+  skip:function(req,res){
+       return res.statusCode<400
+  },
+  stream:accessLogStream
+  
+}));
+```
+
+- let us now use winston
+- create a file called logger.js in root folder
+```
+
+//creater logger.js file in root folder of the project
+//we will use winston
+//more details :https://www.section.io/engineering-education/logging-with-winston/
+
+const {createLogger,transports,format}=require('winston');
+const {timestamp,combine,json}=format;
+require('winston-mongodb');
+
+const logger = createLogger({
+                transports:[
+                  //can be multiple transports that's why array
+                 new transports.MongoDB({
+                            level:'error', // i want to log only errors
+                            db:`mongodb://localhost:27017/final`,
+                            options:{useUnifiedTopology: true},
+                            collection:'server_logs',
+                            format:combine(
+                                timestamp(),
+                                json()
+                            ),
+           
+                        })
+                  
+                  ]
+});
+//if we are in dev env then we want to log to console also
+if (process.env.NODE_ENV !== 'prod') {
+  logger.add(new winston.transports.Console({
+    format: winston.format.simple(),
+  }));
+}
+
+module.exports=logger;
+```
+- now hook logger into globalErrorHandler file
+```
+//import logger file first //
+logger.error(`${req.method} -${req.originalUrl} - ${err.message} -${err.statusCode} -${JSON.stringify(req.body)}`,{
+            //metadata:err.stack
+            metadata:'testing'
+})
+```
+
+
+
+
