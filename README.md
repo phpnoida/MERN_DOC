@@ -20,32 +20,32 @@ const {httpLogin,httpLogout}=require('./../controllers/user');
 //create following folders
 
 Dsobs/api
-    - controllers
-    - models
-    -  middlewares
-    - routes
-    - data
-    - utils/common
-    - public
-    - views
-    - cron
-    - validations
-    - package.json
-    - .env
-    - .gitignore
+- controllers
+- models
+-  middlewares
+- routes
+- data
+- utils/common
+- public
+- views
+- cron
+- validations
+- package.json
+- .env
+- .gitignore
 
 //create package.json file for your project
-npm install -y -->first time create package.json
-npm install ----will install all packages from package.json file 
+-npm install -y -->first time create package.json
+-npm install ----will install all packages from package.json file 
 
 //install npm packages
-npm i express@4
-npm i mongoose //we will install mongoose latest version i.e 6th
-npm i mongoose@5
-npm i dotenv
+-npm i express@4
+-npm i mongoose //we will install mongoose latest version i.e 6th
+-npm i mongoose@5
+-npm i dotenv
 
 //uninstall packages which r not required
-npm uninstall jsownebtoken
+-npm uninstall jsownebtoken
 
 //write script in package.json file to run project
 package.json
@@ -53,9 +53,9 @@ package.json
 "start:dev":"NODE_ENV=development nodemon server.js"
 "start:test":"NODE_ENV=test node server.js"
 
-npm start
-npm run start:dev
-npm run start:test
+-npm start
+-npm run start:dev
+-npm run start:test
 
 ------------------------------------------------------------------------------
 # Models 
