@@ -433,7 +433,9 @@ startServer(); //no need to use await
 ```
 
 ---
+
 # validations in express
+
 - validation in express can be done in 3 ways
 - either in controller,either in model , either using 3rd party package
 - let us see using 3rd party
@@ -470,35 +472,40 @@ const isValidated = (req,res,next)=>{
 
 module.exports={validateLogin,isValidated}
 ```
-- go to routes 
+
+- go to routes
 - const {validateLogin,isValidated}=require('./../validations/user');
 - router.route('/login').post(validateLogin,isValidated,httpLogin);
 
 ---
-# logging 
-- can be done using two ways 
-- first using morgan 
+
+# logging
+
+- can be done using two ways
+- first using morgan
 - second using winston so that we can save logs in db
 - we have to clear db after every 15 days otherwise server will be out of space
 
 - let us start with morgan , go to app.js file
+
 ```
 const morgan =require('morgan');
 //will log all incoming request to console
 app.use(morgan('combined'));
-//write error logs only in access.log file 
+//write error logs only in access.log file
 const accessLogStream =fs.createWriteStream(path.join(__dirname,'access.log'),{flags:'a'});
 app.use(morgan('combined',{
   skip:function(req,res){
        return res.statusCode<400
   },
   stream:accessLogStream
-  
+
 }));
 ```
 
 - let us now use winston
 - create a file called logger.js in root folder
+
 ```
 
 //creater logger.js file in root folder of the project
@@ -521,9 +528,9 @@ const logger = createLogger({
                                 timestamp(),
                                 json()
                             ),
-           
+
                         })
-                  
+
                   ]
 });
 //if we are in dev env then we want to log to console also
@@ -535,7 +542,9 @@ if (process.env.NODE_ENV !== 'prod') {
 
 module.exports=logger;
 ```
+
 - now hook logger into globalErrorHandler file
+
 ```
 //import logger file first //
 logger.error(`${req.method} -${req.originalUrl} - ${err.message} -${err.statusCode} -${JSON.stringify(req.body)}`,{
@@ -544,6 +553,453 @@ logger.error(`${req.method} -${req.originalUrl} - ${err.message} -${err.statusCo
 })
 ```
 
+---
+
+# sending Emails
+
+- create a file called Email.js in common folder
+
+```
+//sending email using AWS SES
+const nodemailer = require('nodemailer');
+const pug=require('pug');
+const AWS = require('aws-sdk');
+
+class Email{
+    constructor(obj){
+        this.obj=obj;
+        this.from=`Chegg<${process.env.EMAIL_FROM}`
+    }
+    createTransporter(){
+        if(process.env.NODE_ENV==='dev'){
+          return nodemailer.createTransport({
+                        host: "smtp.mailtrap.io",
+                        port: 2525,
+                        auth: {
+                            user: "f0210fafe620a0",
+                            pass: "3078eb3b3cd477"
+                        }
+                        })
+        }
+        //for production use aws ses
+        AWS.config.update({
+            accessKeyId: process.env.ACCESS_KEY,
+            secretAccessKey: process.env.SECRET_KEY,
+            region: process.env.REGION
+        });
+        return nodemailer.createTransport({
+            SES: new AWS.SES({
+                apiVersion: '2021-12-01'
+            })
+        })
+    }
+
+    async sendEmail(template,subject){
+        const html=pug.renderFile(`${__dirname}/../views/${template}.pug`,{
+            obj:this.obj
+        });
+
+        const mailOptions={
+            from:this.from,
+            to:this.obj.email,
+            subject,
+            html
+        }
+       await this.createTransporter().sendMail(mailOptions);
+
+    }
 
 
+
+    async sendConfirmation(){
+        await this.sendEmail('confirmation','Product Order Confirmation')
+    }
+
+    async sendForgotPassword(){
+        await this.sendEmail('forgot','Change Password')
+    }
+}
+
+module.exports=Email;
+```
+
+- how to use Email Object in controller
+
+```
+const data={};//as per your need make object
+await new Email(data).sendOTP();
+```
+
+- about pug template engine , you can convert HTML to Pug online
+  otp.pug
+
+```
+//to pass dynamic value in any element
+span=obj.name
+h1=obj.email
+
+//to pass dynamic values in an attribute
+<img alt=`${obj.name}` src=`images/user/${obj.user.profilePic}`/>
+
+//to pass dynamic value in other way
+#{obj.name} (# is must) mostly it is used
+```
+
+-let app.js know that we are using pug as template engine
+
+```
+const path=require('path');
+const pug=require('pug');
+
+app.set('view engine','pug');
+app.set('views',path.join(__dirname,'views'))
+```
+
+---
+
+# Data Modelling
+
+- Two types
+- Embedded or Denormalized
+- Normalized or referntial
+
+- let us understand embedded first
+- Note :embedded array should not grow indefinetely
+
+models->user.js
+
+```
+const mongoose =require('mongoose');
+const userSchema = new mongoose.Schema({
+    c1:{
+        type:Number
+    },
+    c2:{
+        type:String
+    },
+    c3:{
+        type:Boolean
+    },
+    c4:{
+        type:Date
+    },
+    c5:{
+        type:[Number]
+        //type:[String]
+    },
+    c6:Object,
+    c7:{
+        id:{
+            type:mongoose.Schema.Types.ObjectId,
+            ref:'Product'
+        },
+        c71:{
+            type:String
+        }
+    },
+    //embedded
+    c8:[
+        {
+            city:{
+                type:String
+            },
+            state:{
+                type:String
+            },
+            addressLine:{
+                type:String
+            },
+            mobile:{
+                type:Number
+            }
+        }
+    ]
+})
+```
+
+---
+
+# All about mongoose queries
+
+## create (post method)
+
+```
+//1st way
+const data=await User.create(req.body);
+const data = await User.create(insertObj);
+console.log(data);
+//2nd way
+const user = await User.find();
+user.name=req.body.name;
+user.city=req.body.city;
+const data = await user.save();
+```
+
+## fetch (get method)
+
+```
+const data = await User.find({});//give array of objects
+const data=await User.findOne({}); //give 1 object
+const data =await User.findById(id);//give 1 object
+//comparison operator
+await User.find({
+    salary:20,
+    salary:{$eq:20},
+    salary:{$neq:20},
+    salary:{$gte:20},
+    salary:{$lte:40},
+    purchaseDate:{$gte:169875432}
+    city:{$in:['bhopal','gaya','pune']},
+    $expr:{$gte:["$expense","$budget"]}
+})
+//logical operator
+await User.find({
+    //similary $or
+    $and:[
+        {salary:{$gte:20}},
+        {salary:{$lte:70}}
+    ]
+})
+
+//for array fields we have some more operator
+//Type1:array field but not array of objects
+await User.find({
+    paritcipantsId:{
+        $size:2,
+        $elemMatch:{$eq:userId},
+        $elemMatch:{$gte:20},
+        $all:[
+            {$elemMatch:{$eq:userId1}},
+            {$elemMatch:{$eq:userId2}}
+        ]
+    }
+
+})
+//Type2:array of objects
+await User.find({
+    "address":{$elemMatch:{_id:addressId}},
+    "address":{$elemMatch:{_id:addressId,state:'up'}}
+},{"address.$":1})
+```
+
+## delete (delete)
+
+```
+const data = await User.findByIdAndDelete(id);
+const data = await User.deleteOne({});
+const data = await User.deleteMany({});
+```
+
+## delete parent and child records
+
+```
+const productId = req.params.id;
+const product = await Product.findOne({_id:productId});
+if(!product){
+    return next(new AppError('invalid id',404))
+}
+await product.remove();
+
+//now go to product schema
+productSchema.pre('remove',async function(next){
+    //this.model('modelName u want to go to')
+    await this.model('Review').deleteMany({product:this._id})
+})
+```
+
+## update (path)
+
+- operators are
+- $set,$inc,$mul,$push,$addToSet,$pop
+
+```
+const data =await User.findByIdAndUpdate(id,req.body,{new:true,runValidators:true});
+const data = await User.findOneAndUpdate({},req.body);
+const data = await User.updateOne();
+const data = await User.updateMany();
+
+//update particular field
+const data = await User.findOneAndUpdate({
+
+},{
+    $set:{
+        isStatus:true,
+        mobile:70423232,
+        email:''
+
+    }
+})
+
+//increase counter
+const data = await User.findOneAndUpdate({
+
+},{
+    $inc:{
+        "comments":1
+    }
+})
+
+//insert element in array
+const data = await User.findByIdAndUpdate(id,{
+    $push:{
+        "likeBy":userId
+    }
+})
+
+//remove element from array
+const data = await User.findByIdAndUpdate(id,{
+    $pull:{
+        "likeBy":userId
+    }
+})
+
+//insert or remove based on condition
+const option =isLiked?"$pull":"$push";
+const data =await User.findByIdAndUpdate(id,{
+    [option]:{
+        "likedBy":userId
+    }
+})
+
+//insert in array of objects
+const data =await User.findByIdAndUpdate(id,
+    {
+        $push:{
+            "address":req.body.address
+        }
+    }
+})
+
+//remove from array of objects
+const data = await User.findByIdAndUpdate(id,{
+    $pull:{
+        "address":req.body.address.addressId
+    }
+})
+
+//update object in array of object
+const data = await User.findOneAndUpdate({
+    "address":{$elemMatch:{_id:addressId}}
+},{
+    $set:{
+        "address.$":req.body.address
+    }
+})
+```
+
+--
+# filter , sorting , searching ,pagination
+- will write this code in getAllProducts handler in controller
+```
+const {brand,color,numericFilters,searchKeyword,sort,fieldList}=req.query;
+const queryObj={$and:[]};
+
+/*
+implementing filters
+frontend will send data like this 
+color red,blue,green 
+brand samsung,lg,voltas
+*/
+//filter1 i.e color
+if(color){
+    //converting string to array
+    //[red,blue,green]
+    const colorList=color.split(',');
+    queryObj[$and].push({
+        color:{$in:colorList}
+    })
+}
+//filter2 i.e brand
+if(brand){
+    //converting string to array
+    //[voltas,lg,samsung]
+    const brandList=brand.split(',');
+    queryObj[$and].push({
+        brand:{$in:brandList}
+    })
+}
+
+//implementing numeric filter
+//ex price>30 or rating>4.5
+//frontend will send numericFilters as key and in value they will send string separated by comma like price>40,ratings>4.5
+if(numericFilters){
+    console.log(numericFilters);//will be a string
+    //like price>30,rating>4.5
+    //mapping userfirendly to mongodb operator
+    const operatorMap={
+        '>':"$gt",
+        '>=':"$gte",
+        '=':'$eq',
+        '<':"$lt"
+    }
+    const regEx=/\b(<|>|>=|<=|=|<)\b/g 
+    let filters=numericFilters.replace(regEx,(match)=>`-${operatorMap[match]-`);
+    console.log(filters);
+    //now our string from frontend will get converted into mongodb style
+    //price-$gt-40,rating-$gt-4.5
+    //pass all numberfilters of project in an array
+    const options=['price','ratings'];
+    filters=filters.split(',').forEach((item)=>{
+        const [field,operator,value]=item.split('-');
+        if(options.includes(field)){
+            queryObject[field]={[operator]:Number(value)}
+        }
+    })
+    console.log(queryObject);{price:{$gt:40},rating:{$gte:4.5}}
+}
+
+
+let custom_query = Product.find(queryObj);
+
+//implementing searching using regularExpression
+if(searchKeyword){
+    custom_query.find({
+        $or:[
+            firstName:{new RegExp(`^{searchKeyword}`,'i')},
+            city:{new RegExp(`.*{searchKeyword}.*`,'i')}
+        ]
+    })
+
+}
+
+
+
+
+//implementing sorting
+//mainly frontend will send string like price or -price or discount or -disc
+//frontend will send string like discount,-price (in case of multiple)
+if(sort){
+    const sortList=sort.split(',').join(' ');
+    //sort('discount -price')-->we want like this
+    custom_query=custom_query.sort(sortList);
+}else{
+    //setting default sorting 
+    custom_query=custom_query.sort('-createdAt');
+}
+
+//select or projection
+//front end will send string like name,email,password
+//at backend we need to do like select('name email passw')
+if(fieldList){
+    const fieldList=fieldList.split(',').join(' ');
+    custom_query=custom_query.select(fieldList);
+   
+}
+
+//pagination
+const page=req.query.page*1||1;
+const limit =req.query.limit*1||10;
+const skip=(page-1)*limit;
+custom_query=custom_query.skip(skip).limit(limit);
+
+//finally executing
+const data = await custom_query;
+
+//sending response
+res.status(200).json({
+    status:true,
+    data:data,
+    totalRec:await Product.find() //must for pagination at fronend
+})
+```
 
