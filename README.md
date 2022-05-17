@@ -888,16 +888,19 @@ const data = await User.findOneAndUpdate({
 ```
 
 --
+
 # filter , sorting , searching ,pagination
+
 - will write this code in getAllProducts handler in controller
+
 ```
 const {brand,color,numericFilters,searchKeyword,sort,fieldList}=req.query;
 const queryObj={$and:[]};
 
 /*
 implementing filters
-frontend will send data like this 
-color red,blue,green 
+frontend will send data like this
+color red,blue,green
 brand samsung,lg,voltas
 */
 //filter1 i.e color
@@ -932,7 +935,7 @@ if(numericFilters){
         '=':'$eq',
         '<':"$lt"
     }
-    const regEx=/\b(<|>|>=|<=|=|<)\b/g 
+    const regEx=/\b(<|>|>=|<=|=|<)\b/g
     let filters=numericFilters.replace(regEx,(match)=>`-${operatorMap[match]-`);
     console.log(filters);
     //now our string from frontend will get converted into mongodb style
@@ -973,7 +976,7 @@ if(sort){
     //sort('discount -price')-->we want like this
     custom_query=custom_query.sort(sortList);
 }else{
-    //setting default sorting 
+    //setting default sorting
     custom_query=custom_query.sort('-createdAt');
 }
 
@@ -983,7 +986,7 @@ if(sort){
 if(fieldList){
     const fieldList=fieldList.split(',').join(' ');
     custom_query=custom_query.select(fieldList);
-   
+
 }
 
 //pagination
@@ -1003,3 +1006,454 @@ res.status(200).json({
 })
 ```
 
+---
+
+# Referential Modelling
+
+- Example to keep in mind about the structure
+  title name price stock ---------------- reviews productId
+  COLOGOTE 45 4 COOL 1
+  bad 1
+  good 1
+
+```
+//Step1 change in model
+//product.js
+//creating a virtual field for reviews in master table
+productSchema.virtual('reviews',{
+    localField:'_id',
+    foreignField:'productId',
+    ref:'Review',
+    match: { ratings: 5 }
+    count:true
+
+})
+
+//step2 chnage in review model
+productId:{
+    type:mongoose.Schema.Types.ObjectId,
+    ref:'Product'
+},
+userID:{
+    type:mongoose.Schema.Types.ObjectId,
+    ref:'User'
+}
+//make productId,userId collectively unique
+reviewSchema.index({productId,userId},{unique:true})
+
+//step3 change in routes
+product.js
+const reviewRoute=require();
+router.use('/product/:productId/reviews',reviewRoute);
+
+route.js
+const router=express.Router({mergeParams:true});
+router.route('/review').post();
+router.route('/reviews').get();
+router.route('/review/:reviewId').get().patch().delete()
+
+//step4 populating in controller
+
+//various types of populate syntax:
+
+const data = await Product.find().populate({
+    path:'reviews'//name given in virtual field
+    select:'',
+    options: { sort: { 'created_at': -1 } }
+})
+
+const data=await Review.find().populate({
+    path:'productId',
+    select:''
+}).populate({
+    path:'userId',
+    select:''
+})
+
+//populating fron newly created record
+const data = await User.create();
+const finalData=data.populate({
+
+}).execPopulate();
+
+//nested populate from more than 2tables
+const data = await Admin.find().populate({
+    path:'roleId',
+    select:'',
+    populate:{
+        path:'access.moduleId',
+        select:''
+    }
+})
+```
+
+---
+
+# Aggregate pipeline
+
+```
+const data = await User.aggregate([
+    {$match:{}},
+    {$unwind:"$players.playerId"},
+    {$limit:9},
+    {$skip:9},
+    {$sort:{"players.score":1}},//no $ here
+    {
+        $group:{
+            //_id:null
+            _id:{
+               playerId:"$players.playerId"
+
+
+            },
+            total:{$sum:"$players.score"}//$max,$min,$avg,$sum
+            count:{$sum:1},
+            details:{
+                //push:"$$ROOT",
+                push:{
+                    firstName:"$firstName",
+                    lastName:"$lastName"
+                }
+            }
+        }
+    }
+])
+```
+
+---
+
+# login with email/phone and otp
+
+- create otp model as we will store otp in table not redis
+
+```
+code:{
+    type:String,
+    required:true
+},
+expiresIn:{
+    type:Number,
+    required:true
+},
+userId:{
+    type:mongoose.Schema.Types.ObjectId
+},
+sub:{
+    type:String,
+    enum:{
+        values:['user','admin'],
+        message:''
+    },
+isVerified:{
+    type:Boolean,
+    default:false
+},
+attempted:{
+    type:Number,
+    default:0
+}
+}
+```
+
+- controller code , send otpId to frontend , send otp to user on email/phone
+
+```
+const httpLoginController=catchAsync(async(req,res,next)=>{
+    const {email,phone,isAdmin}=req.body;
+    let isEmail=false;
+    let query;
+    if(!isAdmin && (!phone or !email)){
+        return next(new AppError('isAdmin and email or phone is must',400))
+    }
+    if(phone){
+        query={
+            phone:phone
+        }
+
+    }
+    else if(email){
+        query={
+            email:email
+        }
+        isEmail=true;
+    }
+    let data;
+    if(!isAdmin){
+       data = await User.findOne(query);
+
+    }else{
+        data=await Admin.findOne(query);
+    }
+
+    console.log(data);
+    if(!data){
+        return next(new AppError('Not registered user',400))
+    }
+    //logic for OTP code
+    const otpCode=Math.floor();
+    //save otp in db or redis
+    const otp=await OTP.create({
+        code:otpCode,
+        userId:data._id,
+        sub:'user',//otp generated for user
+        expiresIn:moment().unix()
+    })
+    console.log('otp',otp);
+    //send otp to user on either email or phone
+    if(isEmail){
+        new Email({to:data.email,code:otpCode}).sendOTP();
+    }else{
+        //fire sms
+    }
+    //finally sending response to frontend
+    res.status(200).json({
+        status:true,
+        otpId:otp._id
+    })
+
+
+})
+```
+
+- controller verify otp
+- issue jwt access and refresh token
+
+```
+const verifyOTP=catchAsync(async(req,res,next)=>{
+    const {otpId,code}=req.body;
+    if(!otpId){
+        return next(new AppError('otpId is must',400));
+    }
+    const data = await OTP.findById(otpId);
+    console.log(data);
+    if(!data){
+        return next(new AppError('Invalid id',400));
+    }
+    const isExpired = await OTP.findOne({
+        _id:otpId,
+        expiresIn:{$gte:moment().now()}
+    })
+    if(!isExpired){
+        return next(new AppError('otp expired',400))
+    }
+    const isCodeValid = await OTP.findOne({
+        _id:otpId,
+        code:code
+    })
+    if(!isCodeValid){
+        await OTP.findByIdAndUpdate(otpId,{
+            $inc:{
+                attempted:1
+            }
+        })
+        return next(new AppError('Wrong otp',400))
+    }
+    if(isCodeValid.isVerified){
+        return next(new AppError('already verified',400))
+    }
+    await OTP.findByIdAndUpdate(otpId,{
+        $set:{
+            isVerified:true
+        }
+    })
+
+
+    //let us decide it is user or admin from sub
+    let userData;
+    if(isCodeValid.sub==='user'){
+        userData=await User.findById(isCodeValid.userId);
+    }else{
+        userData=await Admin.findById(isCodeValid.userId).populate({
+            path:'roleId',
+            populate:{
+                path:'access.moduleId'
+                select:''
+            }
+        });
+    }
+
+    //now time to send JWT token
+
+    //first create accessToken with expiry of say 15mts or 30mts
+    const accessToken=await getToken(userId,sub,access_secret,expiresIn);
+
+    /*
+    if we want to run our application in 1 phone only
+    means log user out if logins into new phone
+    like netflix
+    otherwise you can ignore below check
+
+    */
+    const isAnyRefreshToken=await Token.findOne({
+        userId:userId
+    });
+    //if yes then delete that previous refreshToken
+    if(isAnyRefreshToken){
+        await Token.findByIdAndDelete(isAnyRefreshToken.-id);
+
+    }
+    const refreshToken=await getToken(userId,sub,access_secret,expiresIn);
+
+    //save refreshToken in db
+    await Token.create({
+        token:refreshToken,
+        userId:userId,
+        sub:sub,
+        isValid:true,
+        ip:String, //req.ip
+        userAgent:String  //req.headers['user-agent']
+    })
+
+    res.status(200).json({
+        status:true,
+        data:userData,
+        accessToken:accessToken,
+        refreshToken:refreshToken
+    })
+})
+```
+
+---
+
+# AccessToken and RefreshToken
+
+- go to common folder and create a file token.js
+
+token.js
+
+```
+const jwt=require('jsonwebtoken');
+
+const getToken=(userId,sub,secretKey,expiresIn)=>{
+    return new Promise((resolve,reject)=>{
+        jwt.sign({
+            _id:userId,
+            sub:sub
+        },secretKey,{expiresIn:expiresIn},(err,token)=>{
+            if(err){
+                reject('jwt token opernation not allowed')
+            }else{
+                resolve(token)
+            }
+        })
+    })
+}
+
+module.exports=getToken;
+```
+
+---
+
+# Logout
+
+- we mainly delete the refreshToken
+
+```
+const httpLogout = catchAsync(async(req,res,next)=>{
+    const {refreshToken}=req.body;
+    if(!refreshToken){
+        return next(new AppError('token is must',400))
+    }
+    //check valid refreshToken or not
+    const isValid = await Token.findById(token);
+    if(!isValid){
+        return next(new AppError('invalid refresh tokenid',400))
+    }
+    //if valid then delete it from db
+    await Token.findByIdAndDelete(token);
+    res.status(200).json({
+        status:true,
+        message:'logout'
+    })
+})
+```
+
+---
+
+# Getting AccessToken based on refreshToken
+
+---
+
+# requireSignIn
+
+- go to middlewares folder and create a file called requireSignIn.js
+
+```
+const jwt = require('jsonwebtoken');
+
+const requireSignIn = (req,res,next)=>{
+    const {authorization}=req.headers;
+    let token;
+    if(authorization){
+    token = authorization.split(' ')[1];
+
+    }
+    if(!token){
+        return next(new AppError('access token is must',401))
+    }
+    jwt.verify(token,process.env.JWT_ACCESS_SECRET,(err,decoded)=>{
+        if(err){
+            return next(new AppError('Token Expired',401))
+        }
+        console.log(decoded);
+        let currentUser;
+        let sub;
+        if(decoded.sub==='user'){
+            currentUser= await User.findById(decoded._id);
+            sub='user';
+
+        }
+        else if(decoded.sub==='admin'){
+            currentUser= await Admin.findById(decoded._id);
+            sub='admin';
+
+        }
+        req.currentUser=currentUser;
+        req.sub=sub;
+        next();
+    })
+}
+```
+
+---
+
+# Roles and Access Level
+
+- let us formulate 3 tables
+- roles ,admins , modules
+- admins table structure below
+- \_id name email phone roleId
+- modules table structure below
+- \_id name icon seqId link
+- roles table structure below
+- \_id roleName accessLevel
+  \_id moduleId c r u d
+
+- go to middlewares folder and create a file rolesAllowedTo.js
+
+```
+const rolesAllowedTo = (...roles)=>{
+    return (req,res,next)=>{
+        if(!roles.includes(req.sub==='admin')){
+          return next(new AppError('Not Allowed',403))
+        }
+        next();
+    }
+
+
+}
+module.exports=rolesAllowedTo;
+```
+
+- how to use it
+- go to routes
+
+```
+//if route is allowed for only admin access
+router.route('/add/staff').post(requireSignIn,rolesAllowedTo('admin'),...);
+
+//if route is allowed for access of both user and admin
+router.route().get(requireSignIn,rolesAllowedTo('user','admin'),..)
+```
+
+---
